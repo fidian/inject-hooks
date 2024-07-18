@@ -71,7 +71,7 @@ People familiar with typical Node-style callbacks and middleware will see simila
 
 Take, for example, this setup where we want to perform an action after a small delay, but the delay is too short so the
 
-```
+```js
 hooks.on('login:submit', (config) => {
     document.getElementById('myForm').submit();
 });
@@ -102,6 +102,10 @@ There is no required naming convention. All of the examples here use strings for
     * `login:form:submit`
     * `browser:navigation:change`
     * `users:row:hover`
+* Name internal processing hooks with the service, library, or code focus first. Include the type of data next when applicable, then add the action.
+    * `email:list:update`
+    * `page-data:markdown:convert-to-html`
+    * `application:loaded`
 * Name interceptors after the plugin's vendor (a company name, the username, or some way to distinguish the author), followed by the name of the plugin.
     * `wiki-core:external-assets-in-web-cache`
     * `fancy-company:hover-panel`
@@ -303,13 +307,13 @@ hooks.remove('abort', 'log-to-console');
 
 ### `hooks.transform(name, data, callback)`
 
-```
+```js
 // hooks.transform(name: any, data: any, callback: (data: any) => void)
 ```
 
 Transforms the data using all registered interceptors for the given name. Can throw if the list of interceptors isn't able to be resolved - see `hooks.validate()`. Also, if any interceptor does not continue the event, your callback will never be called.
 
-```
+```js
 const pageData = '<html><head>...';
 hooks.transform('page-loaded', pageData, (result) => {
     console.log('Result:', result);
