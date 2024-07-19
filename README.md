@@ -1,17 +1,33 @@
 # Inject-Hooks
 
-When writing an application, you might want to separate your user's actions from the code that gets executed. For instance, let's pretend that the application needs to load a specific page on startup.
+This is the framework for a plugin system that is similar to combining `EventEmitter` with middleware, but also provides the ability to dynamically change the order of execution. This allows plugins to work together without needing a user to install them in a specific order, or even for both plugins to know about each other. It provides the following features:
+
+* Listening for events and emitting events
+* Canceling an event
+* Changing the data passed to an event
+* Decoupling user intents and actions from the processes that need to happen
+* Asynchronous processing to allow for more complicated or intensive operations before allowing the event to be triggered
+* Ordering extra pieces of code, allowing two plugins to operate in harmony, consistently executing in the correct order
+
+This would be useful when writing an application. It can coordinate actions between different teams, or you could allow extra functionality (eg. plugins or system extensions) to change how your software operates. For instance, let's pretend that the application needs to load a specific page on startup.
 
 ```js
 import { InjectHooks } from 'inject-hooks';
 import { loadPage } from './your-code';
 
+// Emit "load" when the window is loaded
 const hooks = new InjectHooks();
 window.addEventListener('load', () => hooks.emit('load'));
+
+// On load, let's trigger the "show-page" action
+hooks.on('load', () => hooks.emit('show-page', '/'));
+
+// This action could load a page to be viewed in the browser
 hooks.on('show-page', (pageUrl) => loadPage(pageUrl));
-window.on('load', () => hooks.emit('show-page', '/'));
+
+// Navigation in the page would likewise want to load a page
 hooks.on('navigate', (url) => {
-    loadPage(pageUrl);
+    hooks.emit('show-page', url);
 });
 ```
 
@@ -19,7 +35,9 @@ This is a huge win because now you can trigger dozens of things on page load. Le
 
 ```js
 // Continuing the above example. We're going to name these interceptors
-// "preserve-page-in-localstorage". More on that later.
+// "preserve-page-in-localstorage". Names are arbitrary, but you should
+// follow a convention in your codebase. There's a section documenting
+// suggested practices for names.
 hooks.inject(
     'navigate',
     'preserve-page-in-localstorage',
@@ -67,9 +85,7 @@ hooks.on('404', (url) => load404Page(url));
 
 ## Error Handling
 
-People familiar with typical Node-style callbacks and middleware will see similarities, but please note how errors are not forwarded. It is expected that you will emit a different event or handle the error yourself in another way.
-
-Take, for example, this setup where we want to perform an action after a small delay, but the delay is too short so the
+People familiar with typical Node-style callbacks and middleware will see similarities, but please note how errors are not forwarded. It is expected that you will emit a different event or handle the error yourself in another way. In the following example, one event is changed into another event to signify a handled error has happened and that the action should be prevented.
 
 ```js
 hooks.on('login:submit', (config) => {
@@ -171,7 +187,7 @@ hooks.inject('load-page-better', 'local-storage:fetch', (data, next) => {
     }
 
     next(data);
-}, { before: 'core:load-page:fetch' });
+}, { order: 'pre' });
 
 hooks.inject('load-page-better', 'local-storage:save', (data, next) => {
     if (data.content) {
@@ -179,13 +195,13 @@ hooks.inject('load-page-better', 'local-storage:save', (data, next) => {
     }
 
     next(data);
-}, { after: 'core:load-page:fetch' });
+}, { order: 'post' });
 
 hooks.inject('load-page-better', 'alter-content', (data, next) => {
     if (data.content) {
         data.content = data.content.replace(/##VERSION##/g, '1.2.3');
     }
-}, { before: 'local-storage:save', after: 'core:load-page:fetch' });
+}, { order: 'post', after: 'local-storage:save' });
 ```
 
 With the "load-page-okay" version of the code, we couldn't skip the loading of the page from the server.
@@ -319,6 +335,7 @@ hooks
 //         before?: any[] | any;
 //         conficts?: any[] | any;
 //         depends?: any[] | any;
+//         order?: 'pre' | 'mid' | 'post'; // "mid" is default
 //     }
 // ): this
 ```
@@ -369,6 +386,39 @@ hooks.inject('test', 'five', () => {}, {
 ```
 
 If the above examples were all used, there would be validation errors. Because "five" was added, "four" now conflicts with "five" and "five" requires "six" but "six" is not available.
+
+Finally, you may wish to have some set of plugins happen before or after the "main point" of the hook. Take, for example, forwarding something to a user. If you'd like to allow usernames (without the hostname portion of an email) to be used and automatically apply `@fancy-company.com` to them, a plugin could do this. Similarly, another plugin could happen after the username processing is done and to ensure the user isn't on a blacklist.
+
+```js
+// Main code
+hooks.inject('forward', 'main-code:verify-username', (username, next) => {
+    fetch(`https://my-api/verify-user?username`)
+        .then((response) => response.json())
+        .then(() => next(username), hooks.emit('forward:bad-username'));
+});
+hooks.on('forward', (username) => {
+    console.log('Forwarding to', username);
+});
+
+// Plugins
+hooks.inject('forward', 'default-to-org-email', (username, next) => {
+    if (username.indexOf('@') < 0) {
+        next(username + '@fancy-company.com');
+    } else {
+        next(username);
+    }
+}, { order: 'pre' });
+const blacklist = ['user@bad-place.net', ...];
+hooks.inject('forward', 'disallow-from-blacklist', (username, next) => {
+    if (blacklist.contains(username)) {
+        hooks.emit('forward:bad-username');
+    } else {
+        next(username);
+    }
+}, { order: 'post' });
+```
+
+By default, the value for "order" is "mid". You can think of them as separating interceptors into three buckets. "before" and "after" will order interceptors within a bucket. "depends" and "conflicts" will scan plugins across all buckets.
 
 
 ### `hooks.remove(name, id)`
@@ -428,3 +478,4 @@ This is a combination of techniques seen in other projects. Without their ideas,
     * [EventEmitter](https://nodejs.org/api/events.html#class-eventemitter) to decouple intents from effects.
     * [events-intercept](https://github.com/brandonhorst/events-intercept), which can change event data or prevent the event from being emitted.
     * [Express](https://expressjs.com/) middleware, allowing infinite flexibility for appropriately structured applications.
+    * [Rollup](https://rollupjs.org/) plugins allow extra code before and after a specific point.

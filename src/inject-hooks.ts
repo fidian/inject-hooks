@@ -5,12 +5,14 @@ export interface InjectHooksConditions {
     before?: InjectHooksKey[] | InjectHooksKey;
     conflicts?: InjectHooksKey[] | InjectHooksKey;
     depends?: InjectHooksKey[] | InjectHooksKey;
+    order?: 'pre' | 'mid' | 'post';
 }
 export interface InjectHooksConditionsAbsolute {
     after: InjectHooksKey[];
     before: InjectHooksKey[];
     conflicts: InjectHooksKey[];
     depends: InjectHooksKey[];
+    order: 'pre' | 'mid' | 'post';
 }
 export type InjectHooksHandler = (data?: any) => void;
 export type InjectHooksInterceptor = (data: any, next: InjectHooksCallback) => void;
@@ -64,6 +66,7 @@ export class InjectHooks {
                 before: toArray(conditions.before),
                 conflicts: toArray(conditions.conflicts),
                 depends: toArray(conditions.depends),
+                order: conditions.order || 'mid',
             },
         });
 
@@ -155,25 +158,36 @@ export class InjectHooks {
             return [];
         }
 
-        const unresolved = new Set(map.keys());
-
         // Verify depends and conflicts
         for (const info of map.values()) {
             for (const depend of info.conditions.depends) {
-                if (!unresolved.has(depend)) {
+                if (!map.has(depend)) {
                     throw new Error(`InjectHooks - ${info.id} requires missing dependency ${depend}`);
                 }
             }
 
             for (const conflict of info.conditions.conflicts) {
-                if (unresolved.has(conflict)) {
+                if (map.has(conflict)) {
                     throw new Error(`InjectHooks - ${info.id} conflicts with ${conflict}`);
                 }
             }
         }
 
+        const { pre, mid, post } = this._separateInterceptors(map);
+        const ordered = [
+            ...this._orderInterceptors(pre),
+            ...this._orderInterceptors(mid),
+            ...this._orderInterceptors(post),
+        ]
+        this._interceptorsOrdered.set(name, ordered);
+
+        return ordered;
+    }
+
+    private _orderInterceptors(map: Map<InjectHooksKey, InjectHooksInterceptorInfo>): InjectHooksInterceptor[] {
+        const unresolved = new Set(map.keys());
+        const result = [];
         let unresolvedLastSize = unresolved.size;
-        const ordered: InjectHooksInterceptor[] = [];
 
         do {
             let wait = new Set<InjectHooksKey>();
@@ -198,7 +212,7 @@ export class InjectHooks {
             for (const id of unresolved) {
                 if (!wait.has(id)) {
                     const info = map.get(id)!;
-                    ordered.push(info.injector);
+                    result.push(info.injector);
                     unresolved.delete(id);
                 }
             }
@@ -208,8 +222,26 @@ export class InjectHooks {
             throw new Error(`InjectHooks - Circular dependencies: ${Array.from(unresolved).join(', ')}`);
         }
 
-        this._interceptorsOrdered.set(name, ordered);
+        return result;
+    }
 
-        return ordered;
+    private _separateInterceptors(map: Map<InjectHooksKey, InjectHooksInterceptorInfo>) {
+        const pre = new Map<InjectHooksKey, InjectHooksInterceptorInfo>();
+        const mid = new Map<InjectHooksKey, InjectHooksInterceptorInfo>();
+        const post = new Map<InjectHooksKey, InjectHooksInterceptorInfo>();
+
+        for (const info of map.values()) {
+            const order = info.conditions.order;
+
+            if (order === 'pre') {
+                pre.set(info.id, info);
+            } else if (order === 'post') {
+                post.set(info.id, info);
+            } else {
+                mid.set(info.id, info);
+            }
+        }
+
+        return { pre, mid, post };
     }
 }

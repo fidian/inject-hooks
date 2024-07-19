@@ -52,14 +52,15 @@ test("triggers an interceptor with a listener", (t) => {
     const hooks = new InjectHooks();
     let called1 = false;
     let called2 = false;
-    hooks.on("test", () => {
+    hooks.on("test", (data) => {
         called1 = true;
+        t.is(data, 1);
     });
     hooks.inject("test", "test", (data, next) => {
         called2 = true;
         next(data);
     });
-    hooks.emit("test");
+    hooks.emit("test", 1);
     t.true(called1);
     t.true(called2);
 });
@@ -82,17 +83,17 @@ test("triggering one name will not trigger other names", (t) => {
 test("interceptors can change data", (t) => {
     const hooks = new InjectHooks();
     let data = null;
-    hooks.inject("test", "plus-one", (d, next) => {
-        next(d + 1);
+    hooks.inject("test", "one", (d, next) => {
+        next(`${d} one`);
     });
-    hooks.inject("test", "times-ten", (d, next) => {
-        next(d * 10);
+    hooks.inject("test", "two", (d, next) => {
+        next(`${d} two`);
     });
     hooks.on("test", (d) => {
         data = d;
     });
-    hooks.emit("test", 1);
-    t.is(data, 20);
+    hooks.emit("test", "zero");
+    t.is(data, "zero one two");
 });
 
 test("emit returns this", (t) => {
@@ -174,22 +175,22 @@ test("transform returns this", (t) => {
 
 test("transform modifies data", (t) => {
     const hooks = new InjectHooks();
-    hooks.inject('test', 'test', (d, next) => {
-        next(d + 1);
+    hooks.inject('test', 'one', (d, next) => {
+        next(`${d} one`);
     });
     let result = null;
-    hooks.transform("test", 1, (d) => result = d);
-    t.is(result, 2);
+    hooks.transform("test", 'zero', (d) => result = d);
+    t.is(result, 'zero one');
 });
 
 test("transform only applies interceptors that match the name", (t) => {
     const hooks = new InjectHooks();
-    hooks.inject('test', 'test', (d, next) => {
-        next(d + 1);
+    hooks.inject('test', 'one', (d, next) => {
+        next(`${d} one`);
     });
     let result = null;
-    hooks.transform("not-test", 1, (d) => result = d);
-    t.is(result, 1);
+    hooks.transform("not-test", 'zero', (d) => result = d);
+    t.is(result, 'zero');
 });
 
 test("validate returns this", (t) => {
@@ -215,20 +216,26 @@ test("validate throws when interceptor depends on missing interceptor", (t) => {
 
 test("interceptor order changes based on conditions", (t) => {
     const hooks = new InjectHooks();
-    hooks.inject('test', 'add-one', (d, next) => next(d + 1), { before: 'two' });
+    hooks.inject('test', 'one', (d, next) => {
+        next(`${d} one`);
+    }, { before: 'two' });
     let result = null;
     hooks.on('test', (d) => result = d);
-    hooks.emit('test', 1);
-    t.is(result, 2);
-    hooks.inject('test', 'times-ten', (d, next) => next(d * 10), { after: 'add-one' });
-    hooks.emit('test', 1);
-    t.is(result, 20);
-    hooks.inject('test', 'plus-one-tenth', (d, next) => next(d + 0.1), { before: 'times-ten' });
-    hooks.emit('test', 1);
-    t.is(result, 21);
-    hooks.remove('test', 'times-ten');
-    hooks.emit('test', 1);
-    t.is(result, 2.1);
+    hooks.emit('test', 'zero');
+    t.is(result, 'zero one');
+    hooks.inject('test', 'two', (d, next) => {
+        next(`${d} two`);
+    }, { after: 'one' });
+    hooks.emit('test', 'zero');
+    t.is(result, 'zero one two');
+    hooks.inject('test', 'three', (d, next) => {
+        next(`${d} three`);
+    }, { before: 'two' });
+    hooks.emit('test', 'zero');
+    t.is(result, 'zero one three two');
+    hooks.remove('test', 'two');
+    hooks.emit('test', 'zero');
+    t.is(result, 'zero one three');
 });
 
 test("interceptor order with circular dependencies will throw", (t) => {
@@ -237,4 +244,18 @@ test("interceptor order with circular dependencies will throw", (t) => {
     hooks.inject('test', 'two', () => {}, { before: 'three', after: 'one' });
     hooks.inject('test', 'three', () => {}, { before: 'one' });
     t.throws(() => hooks.emit('test'));
+});
+
+test("ordered interceptors only are relative to interceptors in that same order", (t) => {
+    const hooks = new InjectHooks();
+    hooks.inject('test', 'one', (d, next) => {
+        next(`${d} one`);
+    }, { order: 'pre', after: 'two' });
+    hooks.inject('test', 'two', (d, next) => {
+        next(`${d} two`);
+    }, { });
+    let result = '';
+    hooks.on('test', (d) => result = d);
+    hooks.emit('test', 'zero');
+    t.is(result, 'zero one two');
 });
