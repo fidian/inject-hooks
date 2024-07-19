@@ -112,6 +112,85 @@ There is no required naming convention. All of the examples here use strings for
     * `raphael26:instant-download`
 
 
+## Skipping Processing
+
+There are times when you would like a plugin to be able to override chunks of what your software normally does. For instance, let's pretend that we are writing a tool that needs to fetch a page from your site.
+
+```js
+// One way to do it
+hooks.on('load-page-okay', (pageContent) => {
+    document.getElementById('page').innerHTML = pageContent;
+});
+hooks.inject('load-page-okay', 'core:load-page', (name, next) => {
+    fetch(`https://example.com/page/${name}.txt`)
+        .then((response) => response.text())
+        .then((text) => next(text));
+}
+hooks.emit('load-page-okay', name);
+```
+
+Doing it this way will not make it easy for plugins to override your functionality. Instead, you should be allowed to skip processing under a specific condition. Here's an updated example illustrating this technique, and we are assuming all of this code is part of your core software.
+
+```js
+// This version allows plugins to handle retrieval of the page content
+// and still modify the page content as needed.
+hooks.on('load-page-better', (data) => {
+    document.getElementById('page').innerHTML = data.content;
+});
+
+hooks.inject('load-page-better', 'core:load-page:fetch', (data, next) => {
+    if (data.content) {
+        return next(data);
+    }
+
+    fetch(`https://example.com/page/${data.name}.txt`)
+        .then((response) => response.text())
+        .then((text) => next({
+            ...data,
+            content: text
+        }));
+}
+
+hooks.emit('load-page-better', { name });
+```
+
+How is this better? Let's add three plugins. The first will load the page from `localStorage` if it is available. The second plugin caches the page into `localStorage` if it isn't there already, and the last one will search and replace content.
+
+```js
+hooks.inject('load-page-better', 'local-storage:fetch', (data, next) => {
+    // Allow for other plugins to come before this one
+    if (!data.content) {
+        const content = localStorage.getItem(data.name);
+
+        if (content) {
+            return next({
+                ...data,
+                content
+            });
+        }
+    }
+
+    next(data);
+}, { before: 'core:load-page:fetch' });
+
+hooks.inject('load-page-better', 'local-storage:save', (data, next) => {
+    if (data.content) {
+        localStorage.setItem(data.name, data.content);
+    }
+
+    next(data);
+}, { after: 'core:load-page:fetch' });
+
+hooks.inject('load-page-better', 'alter-content', (data, next) => {
+    if (data.content) {
+        data.content = data.content.replace(/##VERSION##/g, '1.2.3');
+    }
+}, { before: 'local-storage:save', after: 'core:load-page:fetch' });
+```
+
+With the "load-page-okay" version of the code, we couldn't skip the loading of the page from the server.
+
+
 ## API
 
 First, you need to load `InjectHooks` somehow. Pick a method that works best for you.
