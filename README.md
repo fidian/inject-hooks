@@ -247,10 +247,10 @@ const hooks = new InjectHooks();
 ```
 
 
-### `hooks.emit(name, data)`
+### `hooks.emit(name, data, done)`
 
 ```js
-// hooks.emit(name: any, data?: any): this
+// hooks.emit(name: any, data?: any, done?: (data?: any) => void): this
 ```
 
 Sends an event with an optional data payload to any listeners.
@@ -260,6 +260,17 @@ const elem = document.querySelector('a').addEventListener('click', (e) => {
     hooks.emit('link clicked', e.target);
 });
 ```
+
+You can also pass a callback as an optional third parameter. This will be called after all of the injectors have completed their transformations of the data, assuming they have all let the event pass through. It's similar to using `hooks.once()` but will only be called for this particular transformation of data and will not accidentally get the wrong event's data.
+
+```js
+const pageData = '<html><head>...';
+hooks.emit('page-loaded', pageData, (result) => {
+    console.log('Result:', result);
+});
+```
+
+This method can throw if the list of interceptors is unable to be resolved; see `hooks.validate()` for further information. Also, if any interceptor does not continue the event, then the `hooks.on()` handlers will not be called and the optional callback to `hooks.emit()` will not be called.
 
 
 ### `hooks.on(name, handlerSuccess, handlerError?)`
@@ -431,22 +442,6 @@ Eliminates an interceptor. Also clears the calculated list. For more information
 
 ```js
 hooks.remove('abort', 'log-to-console');
-```
-
-
-### `hooks.transform(name, data, callback)`
-
-```js
-// hooks.transform(name: any, data: any, callback: (data: any) => void)
-```
-
-Transforms the data using all registered interceptors for the given name. Can throw if the list of interceptors isn't able to be resolved - see `hooks.validate()`. Also, if any interceptor does not continue the event, your callback will never be called.
-
-```js
-const pageData = '<html><head>...';
-hooks.transform('page-loaded', pageData, (result) => {
-    console.log('Result:', result);
-});
 ```
 
 

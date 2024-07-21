@@ -103,7 +103,10 @@ test("emit returns this", (t) => {
 
 test("inject returns this", (t) => {
     const hooks = new InjectHooks();
-    t.is(hooks.inject("test", "test", () => {}), hooks);
+    t.is(
+        hooks.inject("test", "test", () => {}),
+        hooks
+    );
 });
 
 test("inject throws if ID already exists", (t) => {
@@ -152,7 +155,10 @@ test("once only triggers once", (t) => {
 
 test("once returns this", (t) => {
     const hooks = new InjectHooks();
-    t.is(hooks.once("test", () => {}), hooks);
+    t.is(
+        hooks.once("test", () => {}),
+        hooks
+    );
 });
 
 test("remove returns this", (t) => {
@@ -168,29 +174,24 @@ test("remove throws if ID not found", (t) => {
     t.throws(() => hooks.remove("test", "test"));
 });
 
-test("transform returns this", (t) => {
+test("emit with done modifies data", (t) => {
     const hooks = new InjectHooks();
-    t.is(hooks.transform("test", 1, (d) => d), hooks);
-});
-
-test("transform modifies data", (t) => {
-    const hooks = new InjectHooks();
-    hooks.inject('test', 'one', (d, next) => {
+    hooks.inject("test", "one", (d, next) => {
         next(`${d} one`);
     });
     let result = null;
-    hooks.transform("test", 'zero', (d) => result = d);
-    t.is(result, 'zero one');
+    hooks.emit("test", "zero", (d) => (result = d));
+    t.is(result, "zero one");
 });
 
-test("transform only applies interceptors that match the name", (t) => {
+test("emit with done only applies interceptors that match the name", (t) => {
     const hooks = new InjectHooks();
-    hooks.inject('test', 'one', (d, next) => {
+    hooks.inject("test", "one", (d, next) => {
         next(`${d} one`);
     });
     let result = null;
-    hooks.transform("not-test", 'zero', (d) => result = d);
-    t.is(result, 'zero');
+    hooks.emit("not-test", "zero", (d) => (result = d));
+    t.is(result, "zero");
 });
 
 test("validate returns this", (t) => {
@@ -200,62 +201,87 @@ test("validate returns this", (t) => {
 
 test("validate throws on interceptor conflicts", (t) => {
     const hooks = new InjectHooks();
-    hooks.inject('test', 'one', () => {}, { conflicts: 'two' });
+    hooks.inject("test", "one", () => {}, { conflicts: "two" });
     t.notThrows(() => hooks.validate());
-    hooks.inject('test', 'two', () => {});
+    hooks.inject("test", "two", () => {});
     t.throws(() => hooks.validate());
 });
 
 test("validate throws when interceptor depends on missing interceptor", (t) => {
     const hooks = new InjectHooks();
-    hooks.inject('test', 'one', () => {}, { depends: 'two' });
+    hooks.inject("test", "one", () => {}, { depends: "two" });
     t.throws(() => hooks.validate());
-    hooks.inject('test', 'two', () => {});
+    hooks.inject("test", "two", () => {});
     t.notThrows(() => hooks.validate());
 });
 
 test("interceptor order changes based on conditions", (t) => {
     const hooks = new InjectHooks();
-    hooks.inject('test', 'one', (d, next) => {
-        next(`${d} one`);
-    }, { before: 'two' });
+    hooks.inject(
+        "test",
+        "one",
+        (d, next) => {
+            next(`${d} one`);
+        },
+        { before: "two" }
+    );
     let result = null;
-    hooks.on('test', (d) => result = d);
-    hooks.emit('test', 'zero');
-    t.is(result, 'zero one');
-    hooks.inject('test', 'two', (d, next) => {
-        next(`${d} two`);
-    }, { after: 'one' });
-    hooks.emit('test', 'zero');
-    t.is(result, 'zero one two');
-    hooks.inject('test', 'three', (d, next) => {
-        next(`${d} three`);
-    }, { before: 'two' });
-    hooks.emit('test', 'zero');
-    t.is(result, 'zero one three two');
-    hooks.remove('test', 'two');
-    hooks.emit('test', 'zero');
-    t.is(result, 'zero one three');
+    hooks.on("test", (d) => (result = d));
+    hooks.emit("test", "zero");
+    t.is(result, "zero one");
+    hooks.inject(
+        "test",
+        "two",
+        (d, next) => {
+            next(`${d} two`);
+        },
+        { after: "one" }
+    );
+    hooks.emit("test", "zero");
+    t.is(result, "zero one two");
+    hooks.inject(
+        "test",
+        "three",
+        (d, next) => {
+            next(`${d} three`);
+        },
+        { before: "two" }
+    );
+    hooks.emit("test", "zero");
+    t.is(result, "zero one three two");
+    hooks.remove("test", "two");
+    hooks.emit("test", "zero");
+    t.is(result, "zero one three");
 });
 
 test("interceptor order with circular dependencies will throw", (t) => {
     const hooks = new InjectHooks();
-    hooks.inject('test', 'one', () => {}, { before: 'two' });
-    hooks.inject('test', 'two', () => {}, { before: 'three', after: 'one' });
-    hooks.inject('test', 'three', () => {}, { before: 'one' });
-    t.throws(() => hooks.emit('test'));
+    hooks.inject("test", "one", () => {}, { before: "two" });
+    hooks.inject("test", "two", () => {}, { before: "three", after: "one" });
+    hooks.inject("test", "three", () => {}, { before: "one" });
+    t.throws(() => hooks.emit("test"));
 });
 
 test("ordered interceptors only are relative to interceptors in that same order", (t) => {
     const hooks = new InjectHooks();
-    hooks.inject('test', 'one', (d, next) => {
-        next(`${d} one`);
-    }, { order: 'pre', after: 'two' });
-    hooks.inject('test', 'two', (d, next) => {
-        next(`${d} two`);
-    }, { });
-    let result = '';
-    hooks.on('test', (d) => result = d);
-    hooks.emit('test', 'zero');
-    t.is(result, 'zero one two');
+    hooks.inject(
+        "test",
+        "one",
+        (d, next) => {
+            next(`${d} one`);
+        },
+        { order: "pre", after: "two" }
+    );
+    hooks.inject(
+        "test",
+        "two",
+        (d, next) => {
+            next(`${d} two`);
+        },
+        {}
+    );
+    let result = "";
+    hooks.on("test", (d) => (result = d));
+    hooks.emit("test", "zero");
+    t.is(result, "zero one two");
 });

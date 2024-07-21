@@ -5,17 +5,20 @@ export interface InjectHooksConditions {
     before?: InjectHooksKey[] | InjectHooksKey;
     conflicts?: InjectHooksKey[] | InjectHooksKey;
     depends?: InjectHooksKey[] | InjectHooksKey;
-    order?: 'pre' | 'mid' | 'post';
+    order?: "pre" | "mid" | "post";
 }
 export interface InjectHooksConditionsAbsolute {
     after: InjectHooksKey[];
     before: InjectHooksKey[];
     conflicts: InjectHooksKey[];
     depends: InjectHooksKey[];
-    order: 'pre' | 'mid' | 'post';
+    order: "pre" | "mid" | "post";
 }
 export type InjectHooksHandler = (data?: any) => void;
-export type InjectHooksInterceptor = (data: any, next: InjectHooksCallback) => void;
+export type InjectHooksInterceptor = (
+    data: any,
+    next: InjectHooksCallback
+) => void;
 interface InjectHooksInterceptorInfo {
     id: InjectHooksKey;
     injector: InjectHooksInterceptor;
@@ -24,12 +27,23 @@ interface InjectHooksInterceptorInfo {
 
 export class InjectHooks {
     private _handlers = new Map<InjectHooksKey, InjectHooksHandler[]>();
-    private _interceptors = new Map<InjectHooksKey, Map<InjectHooksKey, InjectHooksInterceptorInfo>>();
-    private _interceptorsOrdered = new Map<InjectHooksKey, InjectHooksInterceptor[]>();
+    private _interceptors = new Map<
+        InjectHooksKey,
+        Map<InjectHooksKey, InjectHooksInterceptorInfo>
+    >();
+    private _interceptorsOrdered = new Map<
+        InjectHooksKey,
+        InjectHooksInterceptor[]
+    >();
 
-    emit(name: InjectHooksKey, data?: any): this {
-        this.transform(name, data, (modifiedData: any) => {
-            const list = [...(this._handlers.get(name)??[])];
+    emit(name: InjectHooksKey, data?: any, done?: (data: any) => void): this {
+        this._transform(name, data, (modifiedData: any) => {
+            const list = [...(this._handlers.get(name) ?? [])];
+
+            if (done) {
+                list.unshift(done);
+            }
+
             list.forEach((handler) => {
                 handler(modifiedData);
             });
@@ -38,7 +52,12 @@ export class InjectHooks {
         return this;
     }
 
-    inject(name: InjectHooksKey, id: InjectHooksKey, injector: InjectHooksInterceptor, conditions: InjectHooksConditions = {}): this {
+    inject(
+        name: InjectHooksKey,
+        id: InjectHooksKey,
+        injector: InjectHooksInterceptor,
+        conditions: InjectHooksConditions = {}
+    ): this {
         const toArray = (a: InjectHooksKey | InjectHooksKey[] | undefined) => {
             if (Array.isArray(a)) {
                 return a;
@@ -49,10 +68,12 @@ export class InjectHooks {
             }
 
             return [a];
-        }
+        };
 
         this._interceptorsOrdered.delete(name);
-        const map = this._interceptors.get(name) || this._interceptors.set(name, new Map()).get(name)!;
+        const map =
+            this._interceptors.get(name) ||
+            this._interceptors.set(name, new Map()).get(name)!;
 
         if (map.has(id)) {
             throw new Error(`InjectHooks - ID already exists: ${id}`);
@@ -66,8 +87,8 @@ export class InjectHooks {
                 before: toArray(conditions.before),
                 conflicts: toArray(conditions.conflicts),
                 depends: toArray(conditions.depends),
-                order: conditions.order || 'mid',
-            },
+                order: conditions.order || "mid"
+            }
         });
 
         return this;
@@ -88,7 +109,8 @@ export class InjectHooks {
     }
 
     on(name: InjectHooksKey, handler: InjectHooksHandler): this {
-        const a = this._handlers.get(name) || this._handlers.set(name, []).get(name)!;
+        const a =
+            this._handlers.get(name) || this._handlers.set(name, []).get(name)!;
         a.push(handler);
 
         return this;
@@ -114,23 +136,6 @@ export class InjectHooks {
         }
 
         throw new Error(`InjectHooks - ${name} interceptor ${id} not found`);
-    }
-
-    transform(name: InjectHooksKey, data: any, callback: InjectHooksCallback): this {
-        const runNext = (interceptors: InjectHooksInterceptor[], data: any) => {
-            const interceptor = interceptors.shift();
-
-            if (interceptor) {
-                interceptor(data, (data) => {
-                    runNext(interceptors, data);
-                });
-            } else {
-                callback(data);
-            }
-        };
-        runNext(this._getInterceptors(name), data);
-
-        return this;
     }
 
     validate(name?: InjectHooksKey): this {
@@ -162,13 +167,17 @@ export class InjectHooks {
         for (const info of map.values()) {
             for (const depend of info.conditions.depends) {
                 if (!map.has(depend)) {
-                    throw new Error(`InjectHooks - ${info.id} requires missing dependency ${depend}`);
+                    throw new Error(
+                        `InjectHooks - ${info.id} requires missing dependency ${depend}`
+                    );
                 }
             }
 
             for (const conflict of info.conditions.conflicts) {
                 if (map.has(conflict)) {
-                    throw new Error(`InjectHooks - ${info.id} conflicts with ${conflict}`);
+                    throw new Error(
+                        `InjectHooks - ${info.id} conflicts with ${conflict}`
+                    );
                 }
             }
         }
@@ -177,14 +186,16 @@ export class InjectHooks {
         const ordered = [
             ...this._orderInterceptors(pre),
             ...this._orderInterceptors(mid),
-            ...this._orderInterceptors(post),
-        ]
+            ...this._orderInterceptors(post)
+        ];
         this._interceptorsOrdered.set(name, ordered);
 
         return ordered;
     }
 
-    private _orderInterceptors(map: Map<InjectHooksKey, InjectHooksInterceptorInfo>): InjectHooksInterceptor[] {
+    private _orderInterceptors(
+        map: Map<InjectHooksKey, InjectHooksInterceptorInfo>
+    ): InjectHooksInterceptor[] {
         const unresolved = new Set(map.keys());
         const result = [];
         let unresolvedLastSize = unresolved.size;
@@ -219,13 +230,17 @@ export class InjectHooks {
         } while (unresolved.size !== unresolvedLastSize && unresolved.size);
 
         if (unresolved.size) {
-            throw new Error(`InjectHooks - Circular dependencies: ${Array.from(unresolved).join(', ')}`);
+            throw new Error(
+                `InjectHooks - Circular dependencies: ${Array.from(unresolved).join(", ")}`
+            );
         }
 
         return result;
     }
 
-    private _separateInterceptors(map: Map<InjectHooksKey, InjectHooksInterceptorInfo>) {
+    private _separateInterceptors(
+        map: Map<InjectHooksKey, InjectHooksInterceptorInfo>
+    ) {
         const pre = new Map<InjectHooksKey, InjectHooksInterceptorInfo>();
         const mid = new Map<InjectHooksKey, InjectHooksInterceptorInfo>();
         const post = new Map<InjectHooksKey, InjectHooksInterceptorInfo>();
@@ -233,9 +248,9 @@ export class InjectHooks {
         for (const info of map.values()) {
             const order = info.conditions.order;
 
-            if (order === 'pre') {
+            if (order === "pre") {
                 pre.set(info.id, info);
-            } else if (order === 'post') {
+            } else if (order === "post") {
                 post.set(info.id, info);
             } else {
                 mid.set(info.id, info);
@@ -243,5 +258,26 @@ export class InjectHooks {
         }
 
         return { pre, mid, post };
+    }
+
+    private _transform(
+        name: InjectHooksKey,
+        data: any,
+        callback: InjectHooksCallback
+    ): this {
+        const runNext = (interceptors: InjectHooksInterceptor[], data: any) => {
+            const interceptor = interceptors.shift();
+
+            if (interceptor) {
+                interceptor(data, (data) => {
+                    runNext(interceptors, data);
+                });
+            } else {
+                callback(data);
+            }
+        };
+        runNext(this._getInterceptors(name), data);
+
+        return this;
     }
 }
