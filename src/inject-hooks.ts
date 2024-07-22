@@ -1,5 +1,6 @@
-export type InjectHooksKey = any;
-export type InjectHooksCallback = (data?: any) => void;
+export type InjectHooksKey = string;
+export type InjectHooksFilter = (name: InjectHooksKey) => boolean;
+export type InjectHooksCallback = (data: any) => void;
 export interface InjectHooksConditions {
     after?: InjectHooksKey[] | InjectHooksKey;
     before?: InjectHooksKey[] | InjectHooksKey;
@@ -14,38 +15,56 @@ export interface InjectHooksConditionsAbsolute {
     depends: InjectHooksKey[];
     order: "pre" | "mid" | "post";
 }
-export type InjectHooksHandler = (data?: any) => void;
+export type InjectHooksHandler = (data: any, name: string) => void;
+interface InjectHooksHandlerInfo {
+    name: InjectHooksKey | InjectHooksFilter;
+    handler: InjectHooksHandler;
+}
 export type InjectHooksInterceptor = (
     data: any,
-    next: InjectHooksCallback
+    next: InjectHooksCallback,
+    name: string
 ) => void;
 interface InjectHooksInterceptorInfo {
     id: InjectHooksKey;
     injector: InjectHooksInterceptor;
+    name: InjectHooksKey | InjectHooksFilter;
     conditions: InjectHooksConditionsAbsolute;
 }
 
+const InjectHooksFilter = Symbol("InjectHooksFilter");
+
 export class InjectHooks {
-    private _handlers = new Map<InjectHooksKey, InjectHooksHandler[]>();
+    private _handlers = new Map<InjectHooksKey | Symbol, InjectHooksHandlerInfo[]>();
     private _interceptors = new Map<
-        InjectHooksKey,
+        InjectHooksKey | Symbol,
         Map<InjectHooksKey, InjectHooksInterceptorInfo>
     >();
     private _interceptorsOrdered = new Map<
-        InjectHooksKey,
+        InjectHooksKey | Symbol,
         InjectHooksInterceptor[]
     >();
 
     emit(name: InjectHooksKey, data?: any, done?: (data: any) => void): this {
         this._transform(name, data, (modifiedData: any) => {
-            const list = [...(this._handlers.get(name) ?? [])];
+            const list = [
+                ...(this._handlers.get(name) ?? []),
+            ];
 
-            if (done) {
-                list.unshift(done);
+            for (const handler of this._handlers.get(InjectHooksFilter) ?? []) {
+                if (typeof handler.name === 'function' && handler.name(name)) {
+                    list.push(handler);
+                }
             }
 
-            list.forEach((handler) => {
-                handler(modifiedData);
+            const handlerList = list.map((item) => item.handler);
+
+            if (done) {
+                handlerList.unshift(done);
+            }
+
+            handlerList.forEach((handler) => {
+                handler(modifiedData, name);
             });
         });
 
@@ -53,7 +72,7 @@ export class InjectHooks {
     }
 
     inject(
-        name: InjectHooksKey,
+        name: InjectHooksKey | InjectHooksFilter,
         id: InjectHooksKey,
         injector: InjectHooksInterceptor,
         conditions: InjectHooksConditions = {}
@@ -70,10 +89,19 @@ export class InjectHooks {
             return [a];
         };
 
-        this._interceptorsOrdered.delete(name);
+        let mapKey: InjectHooksKey | Symbol;
+
+        if (typeof name === 'function') {
+            this._interceptorsOrdered.clear();
+            mapKey = InjectHooksFilter;
+        } else {
+            this._interceptorsOrdered.delete(name);
+            mapKey = name;
+        }
+
         const map =
-            this._interceptors.get(name) ||
-            this._interceptors.set(name, new Map()).get(name)!;
+            this._interceptors.get(mapKey) ||
+            this._interceptors.set(mapKey, new Map()).get(mapKey)!;
 
         if (map.has(id)) {
             throw new Error(`InjectHooks - ID already exists: ${id}`);
@@ -82,6 +110,7 @@ export class InjectHooks {
         map.set(id, {
             id,
             injector,
+            name,
             conditions: {
                 after: toArray(conditions.after),
                 before: toArray(conditions.before),
@@ -94,29 +123,38 @@ export class InjectHooks {
         return this;
     }
 
-    off(name: InjectHooksKey, handler: InjectHooksHandler): this {
-        const a = this._handlers.get(name) || [];
+    off(name: InjectHooksKey | InjectHooksFilter, handler: InjectHooksHandler): this {
+        const key = typeof name === 'function' ? InjectHooksFilter : name;
+        const a = this._handlers.get(key) || [];
 
         for (let i = 0; i < a.length; i += 1) {
-            if (a[i] === handler) {
+            if (a[i].handler === handler) {
                 a.splice(i, 1);
 
                 return this;
             }
         }
 
+        if (a.length === 0) {
+            this._handlers.delete(key);
+        }
+
         throw new Error(`InjectHooks - ${name} handler not found`);
     }
 
-    on(name: InjectHooksKey, handler: InjectHooksHandler): this {
+    on(name: InjectHooksKey | InjectHooksFilter, handler: InjectHooksHandler): this {
+        const key = typeof name === 'function' ? InjectHooksFilter : name;
         const a =
-            this._handlers.get(name) || this._handlers.set(name, []).get(name)!;
-        a.push(handler);
+            this._handlers.get(key) || this._handlers.set(key, []).get(key)!;
+        a.push({
+            name,
+            handler
+        });
 
         return this;
     }
 
-    once(name: InjectHooksKey, handler: InjectHooksHandler): this {
+    once(name: InjectHooksKey | InjectHooksFilter, handler: InjectHooksHandler): this {
         const onceHandler = () => {
             this.off(name, onceHandler);
             this.off(name, handler);
@@ -126,12 +164,18 @@ export class InjectHooks {
         return this.on(name, handler);
     }
 
-    remove(name: InjectHooksKey, id: InjectHooksKey): this {
-        this._interceptorsOrdered.delete(name);
-        const map = this._interceptors.get(name);
+    remove(name: InjectHooksKey | InjectHooksFilter, id: InjectHooksKey): this {
+        const key = typeof name === 'function' ? InjectHooksFilter : name;
+        this._interceptorsOrdered.delete(key);
+        const map = this._interceptors.get(key);
 
         if (map) {
             map.delete(id);
+
+            if (map.size === 0) {
+                this._interceptors.delete(key);
+            }
+
             return this;
         }
 
@@ -140,48 +184,45 @@ export class InjectHooks {
 
     validate(name?: InjectHooksKey): this {
         if (name) {
-            this._getInterceptors(name);
+            this._getOrderedInterceptors(name);
         } else {
             for (const name of this._interceptors.keys()) {
-                this._getInterceptors(name);
+                if (name !== InjectHooksFilter) {
+                    this._getOrderedInterceptors(name as string);
+                }
             }
         }
 
         return this;
     }
 
-    private _getInterceptors(name: InjectHooksKey): InjectHooksInterceptor[] {
+    private _getInterceptors(name: InjectHooksKey): Map<string, InjectHooksInterceptorInfo> {
+        const result = new Map<string, InjectHooksInterceptorInfo>(this._interceptors.get(name) || []);
+
+        for (const [id, info] of this._interceptors.get(InjectHooksFilter) || []) {
+            if (typeof info.name === 'function' && info.name(name)) {
+                if (result.has(id)) {
+                    throw new Error(`InjectHooks - ID already exists: ${id}`);
+                }
+
+                result.set(id, info);
+            }
+        }
+
+        return result;
+    }
+
+    private _getOrderedInterceptors(
+        name: InjectHooksKey
+    ): InjectHooksInterceptor[] {
         const cached = this._interceptorsOrdered.get(name);
 
         if (cached) {
             return cached;
         }
 
-        const map = this._interceptors.get(name);
-
-        if (!map) {
-            return [];
-        }
-
-        // Verify depends and conflicts
-        for (const info of map.values()) {
-            for (const depend of info.conditions.depends) {
-                if (!map.has(depend)) {
-                    throw new Error(
-                        `InjectHooks - ${info.id} requires missing dependency ${depend}`
-                    );
-                }
-            }
-
-            for (const conflict of info.conditions.conflicts) {
-                if (map.has(conflict)) {
-                    throw new Error(
-                        `InjectHooks - ${info.id} conflicts with ${conflict}`
-                    );
-                }
-            }
-        }
-
+        const map = this._getInterceptors(name);
+        this._verifyInterceptors(map);
         const { pre, mid, post } = this._separateInterceptors(map);
         const ordered = [
             ...this._orderInterceptors(pre),
@@ -271,13 +312,36 @@ export class InjectHooks {
             if (interceptor) {
                 interceptor(data, (data) => {
                     runNext(interceptors, data);
-                });
+                }, name);
             } else {
                 callback(data);
             }
         };
-        runNext(this._getInterceptors(name), data);
+        runNext(this._getOrderedInterceptors(name), data);
 
         return this;
+    }
+
+    private _verifyInterceptors(
+        map: Map<InjectHooksKey, InjectHooksInterceptorInfo>
+    ) {
+        // Verify depends and conflicts
+        for (const info of map.values()) {
+            for (const depend of info.conditions.depends) {
+                if (!map.has(depend)) {
+                    throw new Error(
+                        `InjectHooks - ${info.id} requires missing dependency ${depend}`
+                    );
+                }
+            }
+
+            for (const conflict of info.conditions.conflicts) {
+                if (map.has(conflict)) {
+                    throw new Error(
+                        `InjectHooks - ${info.id} conflicts with ${conflict}`
+                    );
+                }
+            }
+        }
     }
 }

@@ -250,7 +250,7 @@ const hooks = new InjectHooks();
 ### `hooks.emit(name, data, done)`
 
 ```js
-// hooks.emit(name: any, data?: any, done?: (data?: any) => void): this
+// hooks.emit(name: string, data?: any, done?: (data?: any) => void): this
 ```
 
 Sends an event with an optional data payload to any listeners.
@@ -273,15 +273,16 @@ hooks.emit('page-loaded', pageData, (result) => {
 This method can throw if the list of interceptors is unable to be resolved; see `hooks.validate()` for further information. Also, if any interceptor does not continue the event, then the `hooks.on()` handlers will not be called and the optional callback to `hooks.emit()` will not be called.
 
 
-### `hooks.on(name, handlerSuccess, handlerError?)`
+### `hooks.on(name, handler)`
 
 ```js
-// hooks.on(name: any, handler: (data: any?) => void): this
+// hooks.on(
+//     name: string | ((name: string) => boolean),
+//     handler: (data: any, name: string) => void
+// ): this
 ```
 
 Attach an event handler. Data passed along with the event is included as the first argument.
-
-Returns a function that can be called to remove the event handler.
 
 ```js
 // Add the event handler
@@ -292,11 +293,26 @@ hooks
     .emit('init', ['test']); // Init hook called ['test']
 ```
 
-
-### `hooks.off(name, handler)`
+When using a function as a filter, you can attach a single handler to multiple events.
 
 ```js
-// hooks.off(name: any, handler: (data: any?) => void): this
+// Listen for all core events
+hooks.on(
+    (name: string) => name.substr(0, 5) === 'core:',
+    (data: any, name: string) => {
+        console.log(`${name} completed`, data);
+    }
+);
+```
+
+
+### `hooks.off(name, handler?)`
+
+```js
+// hooks.off(
+//     name: string | ((name: string) => boolean),
+//     handler: (data: any, name: string) => void
+// ): this
 ```
 
 Removes an event handler. This must be the same function object as what was passed to `hooks.on()`.
@@ -312,12 +328,24 @@ hooks
     .off('debug', handler);
 ```
 
+Can also remove the hooks attached with a function.
+
+```js
+const filter = () => true;
+const handler = (data, name) => console.log(name, data);
+hooks.on(filter, handler);
+hooks.off(filter, handler);
+```
+
 
 ### `hooks.once(name, handler)`
 
 
 ```js
-// hooks.once(name: any, handler: (data: any?) => void): this
+// hooks.once(
+//     name: string | ((name: string) => boolean),
+//     handler: (data: any, name: string) => void
+// ): this
 ```
 
 Calls an event handler once when the event is triggered, then removes the event handler.
@@ -333,14 +361,27 @@ hooks
     .emit('save', 'b'); // Nothing.
 ```
 
+As with `hooks.on()`, a filter function can be used. The filter might match multiple event names and register the handler several times, but the handler will only be called once. Once called, it is removed from all of the registered events.
+
+```js
+hooks.once(
+    (name: string) => name.match(/:debug$/),
+    (data, name) => console.log(name, data)
+);
+```
+
 
 ### `hooks.inject(name, id, interceptor, conditions = {})`
 
 ```js
 // hooks.inject(
-//     name: any,
+//     name: string | ((name: string) => boolean),
 //     id: any,
-//     interceptor: (data: any?, next: (data?: any) => void,
+//     interceptor: (
+//         data: any,
+//         next: (data?: any) => void,
+//         name: string
+//     ) => void
 //     conditions?: {
 //         after?: any[] | any;
 //         before?: any[] | any;
@@ -351,7 +392,7 @@ hooks
 // ): this
 ```
 
-Add an interceptor to the list for a specific hook name. If there's already an interceptor with the same `id` and `name`, then this method will throw.
+Add an interceptor to the list for a specific hook name. If there's already an interceptor with the same `id` and `name`, then this method will throw. Just like how `hooks.on()` works, a filter function can be passed instead of the name and the injector could be added to multiple event streams.
 
 ```js
 hooks.inject('abort', 'log-to-console', (reason, next) => {
@@ -435,7 +476,10 @@ By default, the value for "order" is "mid". You can think of them as separating 
 ### `hooks.remove(name, id)`
 
 ```js
-// hooks.remove(name: any, id: any);
+// hooks.remove(
+//     name: string | ((name: string) => boolean),
+//     id: any
+// );
 ```
 
 Eliminates an interceptor. Also clears the calculated list. For more information, see `hooks.inject()`.
@@ -448,7 +492,7 @@ hooks.remove('abort', 'log-to-console');
 ### `hooks.validate()`
 
 ```js
-hooks.validate(name?: any): boolean
+hooks.validate(name?: string): boolean
 ```
 
 Calculate the order for all interceptors or for a specific hook name. If there are problems, this throws an Error.

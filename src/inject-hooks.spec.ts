@@ -285,3 +285,108 @@ test("ordered interceptors only are relative to interceptors in that same order"
     hooks.emit("test", "zero");
     t.is(result, "zero one two");
 });
+
+test("can use a function to determine if an interceptor should run", (t) => {
+    const hooks = new InjectHooks();
+    hooks.inject(
+        (name: string) => !!name.match(/e/),
+        "one",
+        (data, next) => next(`${data} one`)
+    );
+    hooks.inject(
+        (name: string) => !!name.match(/s/),
+        "two",
+        (data, next) => next(`${data} two`)
+    );
+    let resultTest: string | null = null;
+    let resultStan: string | null = null;
+    hooks.on("test", (d) => (resultTest = d));
+    hooks.on("stan", (d) => (resultStan = d));
+    hooks.emit("test", "zero");
+    t.is(resultTest, "zero one two");
+    t.is(resultStan, null);
+    hooks.emit("stan", "zero");
+    t.is(resultTest, "zero one two");
+    t.is(resultStan, "zero two");
+});
+
+test("can use a function to listen for events", (t) => {
+    const hooks = new InjectHooks();
+    const e: string[] = [];
+    const s: string[] = [];
+    hooks.on(
+        (name: string) => !!name.match(/e/),
+        (data) => e.push(data)
+    );
+    hooks.emit("test", "one");
+    t.is(e.length, 1);
+    t.is(s.length, 0);
+    hooks.on(
+        (name: string) => !!name.match(/s/),
+        (data) => s.push(data)
+    );
+    hooks.emit("test", "two");
+    t.is(e.length, 2);
+    t.is(s.length, 1);
+    hooks.emit("stan", "three");
+    t.is(e.length, 2);
+    t.is(s.length, 2);
+});
+
+test("can add and remove interceptors with a function", (t) => {
+    const hooks = new InjectHooks();
+    let hits = 0;
+    const filter = (name: string) => !!name.match(/e/);
+    const handler = (data: string) => hits++;
+    hooks.on(filter, handler);
+    hooks.emit("test", "one");
+    t.is(hits, 1);
+    hooks.off(filter, handler);
+    hooks.emit("test", "one");
+    t.is(hits, 1);
+});
+
+test("can add and remove handlers with a function", (t) => {
+    const hooks = new InjectHooks();
+    let hits = 0;
+    const filter = (name: string) => !!name.match(/e/);
+    const handler = (data: string) => hits++;
+    hooks.on(filter, handler);
+    hooks.emit("test", "one");
+    t.is(hits, 1);
+    hooks.off(filter, handler);
+    hooks.emit("test", "one");
+    t.is(hits, 1);
+});
+
+test("interceptors and handlers get names passed in", (t) => {
+    const hooks = new InjectHooks();
+    let hits = 0;
+    hooks.on("test", (data, name) => {
+        t.is(name, "test");
+        hits += 1;
+    });
+    hooks.on(
+        (name) => name !== "skip",
+        (data, name) => {
+            t.is(name, "test");
+            hits += 1;
+        }
+    );
+    hooks.inject("test", "one", (data, next, name) => {
+        t.is(name, "test");
+        hits += 1;
+        next(data);
+    });
+    hooks.inject(
+        (name) => name !== "skip",
+        "two",
+        (data, next, name) => {
+            t.is(name, "test");
+            hits += 1;
+            next(data);
+        }
+    );
+    hooks.emit("test", "zero");
+    t.is(hits, 4);
+});
