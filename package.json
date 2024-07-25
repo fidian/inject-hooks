@@ -1,6 +1,6 @@
 {
     "name": "inject-hooks",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "description": "Combine EventEmitters and middleware to create a powerful hook system.",
     "keywords": [
         "hook",
@@ -47,5 +47,8 @@
         "files": [
             "src/**/*.spec.ts"
         ]
+    },
+    "dependencies": {
+        "@types/node": "^20.14.12"
     }
 }

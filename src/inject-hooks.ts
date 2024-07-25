@@ -1,4 +1,5 @@
 export type InjectHooksKey = string;
+export type InjectHooksId = string;
 export type InjectHooksFilter = (name: InjectHooksKey) => boolean;
 export type InjectHooksCallback = (data: any) => void;
 export interface InjectHooksConditions {
@@ -15,66 +16,80 @@ export interface InjectHooksConditionsAbsolute {
     depends: InjectHooksKey[];
     order: "pre" | "mid" | "post";
 }
-export type InjectHooksHandler = (data: any, name: string) => void;
+export type InjectHooksHandler<KEY, VALUE> = (data: VALUE, name: KEY) => void;
 interface InjectHooksHandlerInfo {
     name: InjectHooksKey | InjectHooksFilter;
-    handler: InjectHooksHandler;
+    handler: InjectHooksHandler<string, any>;
 }
-export type InjectHooksInterceptor = (
-    data: any,
+export type InjectHooksInterceptor<KEY, VALUE> = (
+    data: VALUE,
     next: InjectHooksCallback,
-    name: string
+    name: KEY
 ) => void;
 interface InjectHooksInterceptorInfo {
-    id: InjectHooksKey;
-    injector: InjectHooksInterceptor;
+    id: InjectHooksId;
+    injector: InjectHooksInterceptor<string, any>;
     name: InjectHooksKey | InjectHooksFilter;
     conditions: InjectHooksConditionsAbsolute;
 }
 
 const InjectHooksFilter = Symbol("InjectHooksFilter");
 
-export class InjectHooks {
-    private _handlers = new Map<InjectHooksKey | Symbol, InjectHooksHandlerInfo[]>();
+export class InjectHooks<T = Record<InjectHooksKey, any>> {
+    private _handlers = new Map<
+        InjectHooksKey | Symbol,
+        InjectHooksHandlerInfo[]
+    >();
     private _interceptors = new Map<
         InjectHooksKey | Symbol,
         Map<InjectHooksKey, InjectHooksInterceptorInfo>
     >();
     private _interceptorsOrdered = new Map<
         InjectHooksKey | Symbol,
-        InjectHooksInterceptor[]
+        InjectHooksInterceptor<string, any>[]
     >();
 
-    emit(name: InjectHooksKey, data?: any, done?: (data: any) => void): this {
-        this._transform(name, data, (modifiedData: any) => {
-            const list = [
-                ...(this._handlers.get(name) ?? []),
-            ];
+    emit<KEY extends keyof T & InjectHooksKey>(
+        name: KEY,
+        data?: T[KEY],
+        done?: (data: T[KEY]) => void
+    ): this {
+        // Validate interceptors or throw
+        this._getOrderedInterceptors(name);
 
-            for (const handler of this._handlers.get(InjectHooksFilter) ?? []) {
-                if (typeof handler.name === 'function' && handler.name(name)) {
-                    list.push(handler);
+        setTimeout(() => {
+            this._transform(name, data as T[KEY], (modifiedData: any) => {
+                const list = [...(this._handlers.get(name) ?? [])];
+
+                for (const handler of this._handlers.get(InjectHooksFilter) ??
+                    []) {
+                    if (
+                        typeof handler.name === "function" &&
+                        handler.name(name)
+                    ) {
+                        list.push(handler);
+                    }
                 }
-            }
 
-            const handlerList = list.map((item) => item.handler);
+                const handlerList = list.map((item) => item.handler);
 
-            if (done) {
-                handlerList.unshift(done);
-            }
+                if (done) {
+                    handlerList.unshift(done);
+                }
 
-            handlerList.forEach((handler) => {
-                handler(modifiedData, name);
+                handlerList.forEach((handler) => {
+                    handler(modifiedData, name);
+                });
             });
         });
 
         return this;
     }
 
-    inject(
-        name: InjectHooksKey | InjectHooksFilter,
-        id: InjectHooksKey,
-        injector: InjectHooksInterceptor,
+    inject<KEY extends keyof T & InjectHooksKey>(
+        name: KEY | InjectHooksFilter,
+        id: InjectHooksId,
+        injector: InjectHooksInterceptor<KEY, T[KEY]>,
         conditions: InjectHooksConditions = {}
     ): this {
         const toArray = (a: InjectHooksKey | InjectHooksKey[] | undefined) => {
@@ -91,7 +106,7 @@ export class InjectHooks {
 
         let mapKey: InjectHooksKey | Symbol;
 
-        if (typeof name === 'function') {
+        if (typeof name === "function") {
             this._interceptorsOrdered.clear();
             mapKey = InjectHooksFilter;
         } else {
@@ -109,7 +124,7 @@ export class InjectHooks {
 
         map.set(id, {
             id,
-            injector,
+            injector: injector as InjectHooksInterceptor<string, any>,
             name,
             conditions: {
                 after: toArray(conditions.after),
@@ -123,8 +138,11 @@ export class InjectHooks {
         return this;
     }
 
-    off(name: InjectHooksKey | InjectHooksFilter, handler: InjectHooksHandler): this {
-        const key = typeof name === 'function' ? InjectHooksFilter : name;
+    off<KEY extends keyof T & string>(
+        name: KEY | InjectHooksFilter,
+        handler: InjectHooksHandler<KEY, T[KEY]>
+    ): this {
+        const key = typeof name === "function" ? InjectHooksFilter : name;
         const a = this._handlers.get(key) || [];
 
         for (let i = 0; i < a.length; i += 1) {
@@ -142,19 +160,25 @@ export class InjectHooks {
         throw new Error(`InjectHooks - ${name} handler not found`);
     }
 
-    on(name: InjectHooksKey | InjectHooksFilter, handler: InjectHooksHandler): this {
-        const key = typeof name === 'function' ? InjectHooksFilter : name;
+    on<KEY extends keyof T & string>(
+        name: KEY | InjectHooksFilter,
+        handler: InjectHooksHandler<KEY, T[KEY]>
+    ): this {
+        const key = typeof name === "function" ? InjectHooksFilter : name;
         const a =
             this._handlers.get(key) || this._handlers.set(key, []).get(key)!;
         a.push({
             name,
-            handler
+            handler: handler as InjectHooksHandler<string, any>
         });
 
         return this;
     }
 
-    once(name: InjectHooksKey | InjectHooksFilter, handler: InjectHooksHandler): this {
+    once<KEY extends keyof T & string>(
+        name: KEY | InjectHooksFilter,
+        handler: InjectHooksHandler<KEY, T[KEY]>
+    ): this {
         const onceHandler = () => {
             this.off(name, onceHandler);
             this.off(name, handler);
@@ -164,8 +188,11 @@ export class InjectHooks {
         return this.on(name, handler);
     }
 
-    remove(name: InjectHooksKey | InjectHooksFilter, id: InjectHooksKey): this {
-        const key = typeof name === 'function' ? InjectHooksFilter : name;
+    remove<KEY extends keyof T & string>(
+        name: KEY | InjectHooksFilter,
+        id: InjectHooksId
+    ): this {
+        const key = typeof name === "function" ? InjectHooksFilter : name;
         this._interceptorsOrdered.delete(key);
         const map = this._interceptors.get(key);
 
@@ -182,7 +209,7 @@ export class InjectHooks {
         throw new Error(`InjectHooks - ${name} interceptor ${id} not found`);
     }
 
-    validate(name?: InjectHooksKey): this {
+    validate<KEY extends keyof T & string>(name?: KEY): this {
         if (name) {
             this._getOrderedInterceptors(name);
         } else {
@@ -196,11 +223,16 @@ export class InjectHooks {
         return this;
     }
 
-    private _getInterceptors(name: InjectHooksKey): Map<string, InjectHooksInterceptorInfo> {
-        const result = new Map<string, InjectHooksInterceptorInfo>(this._interceptors.get(name) || []);
+    private _getInterceptors(
+        name: InjectHooksKey
+    ): Map<string, InjectHooksInterceptorInfo> {
+        const result = new Map<string, InjectHooksInterceptorInfo>(
+            this._interceptors.get(name) || []
+        );
 
-        for (const [id, info] of this._interceptors.get(InjectHooksFilter) || []) {
-            if (typeof info.name === 'function' && info.name(name)) {
+        for (const [id, info] of this._interceptors.get(InjectHooksFilter) ||
+            []) {
+            if (typeof info.name === "function" && info.name(name)) {
                 if (result.has(id)) {
                     throw new Error(`InjectHooks - ID already exists: ${id}`);
                 }
@@ -214,7 +246,7 @@ export class InjectHooks {
 
     private _getOrderedInterceptors(
         name: InjectHooksKey
-    ): InjectHooksInterceptor[] {
+    ): InjectHooksInterceptor<string, any>[] {
         const cached = this._interceptorsOrdered.get(name);
 
         if (cached) {
@@ -236,7 +268,7 @@ export class InjectHooks {
 
     private _orderInterceptors(
         map: Map<InjectHooksKey, InjectHooksInterceptorInfo>
-    ): InjectHooksInterceptor[] {
+    ): InjectHooksInterceptor<string, any>[] {
         const unresolved = new Set(map.keys());
         const result = [];
         let unresolvedLastSize = unresolved.size;
@@ -301,18 +333,22 @@ export class InjectHooks {
         return { pre, mid, post };
     }
 
-    private _transform(
-        name: InjectHooksKey,
-        data: any,
+    private _transform<KEY extends keyof T & string>(
+        name: KEY,
+        data: T[KEY],
         callback: InjectHooksCallback
     ): this {
-        const runNext = (interceptors: InjectHooksInterceptor[], data: any) => {
+        const runNext = (interceptors: InjectHooksInterceptor<string, any>[], data: any) => {
             const interceptor = interceptors.shift();
 
             if (interceptor) {
-                interceptor(data, (data) => {
-                    runNext(interceptors, data);
-                }, name);
+                interceptor(
+                    data,
+                    (data) => {
+                        runNext(interceptors, data);
+                    },
+                    name
+                );
             } else {
                 callback(data);
             }

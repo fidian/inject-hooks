@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0
+
+* Tightened TypeScript typings, allowing consumers to specify an interface that defines the event names and payloads.
+* Made `emit` throw synchronously (so it can be caught) when interceptors have an ordering problem.
+* Fixed tests from async addition in 1.3.1.
+
+## 1.3.1
+
+* Made `hooks.emit()` asynchronous. This makes debugging significantly easier because events that trigger followup events will be logged in the right order.
+
 ## 1.3.0
 
 * Added ability to have interceptors and event listeners listen to any number of events through filter functions.

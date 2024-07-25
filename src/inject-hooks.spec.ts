@@ -1,6 +1,10 @@
 import { InjectHooks } from "./inject-hooks";
 import test from "ava";
 
+async function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 test("constructor", (t) => {
     const hooks = new InjectHooks();
     t.truthy(hooks);
@@ -12,17 +16,18 @@ test("emit with no listeners", (t) => {
     t.notThrows(() => hooks.emit("test"));
 });
 
-test("trigger one listener", (t) => {
+test("trigger one listener", async (t) => {
     const hooks = new InjectHooks();
     let called = false;
     hooks.on("test", () => {
         called = true;
     });
     hooks.emit("test");
+    await sleep(1);
     t.true(called);
 });
 
-test("triggers multiple listeners", (t) => {
+test("triggers multiple listeners", async (t) => {
     const hooks = new InjectHooks();
     let called1 = false;
     let called2 = false;
@@ -33,11 +38,12 @@ test("triggers multiple listeners", (t) => {
         called2 = true;
     });
     hooks.emit("test");
+    await sleep(1);
     t.true(called1);
     t.true(called2);
 });
 
-test("triggers an interceptor without a listener", (t) => {
+test("triggers an interceptor without a listener", async (t) => {
     const hooks = new InjectHooks();
     let called = false;
     hooks.inject("test", "test", (data, next) => {
@@ -45,10 +51,11 @@ test("triggers an interceptor without a listener", (t) => {
         next(data);
     });
     hooks.emit("test");
+    await sleep(1);
     t.true(called);
 });
 
-test("triggers an interceptor with a listener", (t) => {
+test("triggers an interceptor with a listener", async (t) => {
     const hooks = new InjectHooks();
     let called1 = false;
     let called2 = false;
@@ -61,11 +68,12 @@ test("triggers an interceptor with a listener", (t) => {
         next(data);
     });
     hooks.emit("test", 1);
+    await sleep(1);
     t.true(called1);
     t.true(called2);
 });
 
-test("triggering one name will not trigger other names", (t) => {
+test("triggering one name will not trigger other names", async (t) => {
     const hooks = new InjectHooks();
     let called1 = false;
     let called2 = false;
@@ -76,11 +84,12 @@ test("triggering one name will not trigger other names", (t) => {
         called2 = true;
     });
     hooks.emit("test1");
+    await sleep(1);
     t.true(called1);
     t.false(called2);
 });
 
-test("interceptors can change data", (t) => {
+test("interceptors can change data", async (t) => {
     const hooks = new InjectHooks();
     let data = null;
     hooks.inject("test", "one", (d, next) => {
@@ -93,6 +102,7 @@ test("interceptors can change data", (t) => {
         data = d;
     });
     hooks.emit("test", "zero");
+    await sleep(1);
     t.is(data, "zero one two");
 });
 
@@ -129,7 +139,7 @@ test("off throws if handler not found", (t) => {
     t.throws(() => hooks.off("test", () => {}));
 });
 
-test("off only removes one instance if handler added multiple times", (t) => {
+test("off only removes one instance if handler added multiple times", async (t) => {
     const hooks = new InjectHooks();
     let count = 0;
     const handler = () => {
@@ -139,17 +149,20 @@ test("off only removes one instance if handler added multiple times", (t) => {
     hooks.on("test", handler);
     hooks.off("test", handler);
     hooks.emit("test");
+    await sleep(1);
     t.is(count, 1);
 });
 
-test("once only triggers once", (t) => {
+test("once only triggers once", async (t) => {
     const hooks = new InjectHooks();
     let count = 0;
     hooks.once("test", () => {
         count += 1;
     });
     hooks.emit("test");
+    await sleep(1);
     hooks.emit("test");
+    await sleep(1);
     t.is(count, 1);
 });
 
@@ -174,23 +187,25 @@ test("remove throws if ID not found", (t) => {
     t.throws(() => hooks.remove("test", "test"));
 });
 
-test("emit with done modifies data", (t) => {
+test("emit with done modifies data", async (t) => {
     const hooks = new InjectHooks();
     hooks.inject("test", "one", (d, next) => {
         next(`${d} one`);
     });
     let result = null;
     hooks.emit("test", "zero", (d) => (result = d));
+    await sleep(1);
     t.is(result, "zero one");
 });
 
-test("emit with done only applies interceptors that match the name", (t) => {
+test("emit with done only applies interceptors that match the name", async (t) => {
     const hooks = new InjectHooks();
     hooks.inject("test", "one", (d, next) => {
         next(`${d} one`);
     });
     let result = null;
     hooks.emit("not-test", "zero", (d) => (result = d));
+    await sleep(1);
     t.is(result, "zero");
 });
 
@@ -215,7 +230,7 @@ test("validate throws when interceptor depends on missing interceptor", (t) => {
     t.notThrows(() => hooks.validate());
 });
 
-test("interceptor order changes based on conditions", (t) => {
+test("interceptor order changes based on conditions", async (t) => {
     const hooks = new InjectHooks();
     hooks.inject(
         "test",
@@ -228,6 +243,7 @@ test("interceptor order changes based on conditions", (t) => {
     let result = null;
     hooks.on("test", (d) => (result = d));
     hooks.emit("test", "zero");
+    await sleep(1);
     t.is(result, "zero one");
     hooks.inject(
         "test",
@@ -238,6 +254,7 @@ test("interceptor order changes based on conditions", (t) => {
         { after: "one" }
     );
     hooks.emit("test", "zero");
+    await sleep(1);
     t.is(result, "zero one two");
     hooks.inject(
         "test",
@@ -248,9 +265,11 @@ test("interceptor order changes based on conditions", (t) => {
         { before: "two" }
     );
     hooks.emit("test", "zero");
+    await sleep(1);
     t.is(result, "zero one three two");
     hooks.remove("test", "two");
     hooks.emit("test", "zero");
+    await sleep(1);
     t.is(result, "zero one three");
 });
 
@@ -262,7 +281,7 @@ test("interceptor order with circular dependencies will throw", (t) => {
     t.throws(() => hooks.emit("test"));
 });
 
-test("ordered interceptors only are relative to interceptors in that same order", (t) => {
+test("ordered interceptors only are relative to interceptors in that same order", async (t) => {
     const hooks = new InjectHooks();
     hooks.inject(
         "test",
@@ -283,10 +302,11 @@ test("ordered interceptors only are relative to interceptors in that same order"
     let result = "";
     hooks.on("test", (d) => (result = d));
     hooks.emit("test", "zero");
+    await sleep(1);
     t.is(result, "zero one two");
 });
 
-test("can use a function to determine if an interceptor should run", (t) => {
+test("can use a function to determine if an interceptor should run", async (t) => {
     const hooks = new InjectHooks();
     hooks.inject(
         (name: string) => !!name.match(/e/),
@@ -303,14 +323,16 @@ test("can use a function to determine if an interceptor should run", (t) => {
     hooks.on("test", (d) => (resultTest = d));
     hooks.on("stan", (d) => (resultStan = d));
     hooks.emit("test", "zero");
+    await sleep(1);
     t.is(resultTest, "zero one two");
     t.is(resultStan, null);
     hooks.emit("stan", "zero");
+    await sleep(1);
     t.is(resultTest, "zero one two");
     t.is(resultStan, "zero two");
 });
 
-test("can use a function to listen for events", (t) => {
+test("can use a function to listen for events", async (t) => {
     const hooks = new InjectHooks();
     const e: string[] = [];
     const s: string[] = [];
@@ -319,6 +341,7 @@ test("can use a function to listen for events", (t) => {
         (data) => e.push(data)
     );
     hooks.emit("test", "one");
+    await sleep(1);
     t.is(e.length, 1);
     t.is(s.length, 0);
     hooks.on(
@@ -326,40 +349,46 @@ test("can use a function to listen for events", (t) => {
         (data) => s.push(data)
     );
     hooks.emit("test", "two");
+    await sleep(1);
     t.is(e.length, 2);
     t.is(s.length, 1);
     hooks.emit("stan", "three");
+    await sleep(1);
     t.is(e.length, 2);
     t.is(s.length, 2);
 });
 
-test("can add and remove interceptors with a function", (t) => {
+test("can add and remove interceptors with a function", async (t) => {
     const hooks = new InjectHooks();
     let hits = 0;
     const filter = (name: string) => !!name.match(/e/);
     const handler = (data: string) => hits++;
     hooks.on(filter, handler);
     hooks.emit("test", "one");
+    await sleep(1);
     t.is(hits, 1);
     hooks.off(filter, handler);
     hooks.emit("test", "one");
+    await sleep(1);
     t.is(hits, 1);
 });
 
-test("can add and remove handlers with a function", (t) => {
+test("can add and remove handlers with a function", async (t) => {
     const hooks = new InjectHooks();
     let hits = 0;
     const filter = (name: string) => !!name.match(/e/);
     const handler = (data: string) => hits++;
     hooks.on(filter, handler);
     hooks.emit("test", "one");
+    await sleep(1);
     t.is(hits, 1);
     hooks.off(filter, handler);
     hooks.emit("test", "one");
+    await sleep(1);
     t.is(hits, 1);
 });
 
-test("interceptors and handlers get names passed in", (t) => {
+test("interceptors and handlers get names passed in", async (t) => {
     const hooks = new InjectHooks();
     let hits = 0;
     hooks.on("test", (data, name) => {
@@ -388,5 +417,6 @@ test("interceptors and handlers get names passed in", (t) => {
         }
     );
     hooks.emit("test", "zero");
+    await sleep(1);
     t.is(hits, 4);
 });
